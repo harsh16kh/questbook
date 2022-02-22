@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity >=0.7.0 <0.9.0;
+
+interface cETH {
+    
+    // define functions of COMPOUND we'll be using
+    
+    function mint() external payable; // to deposit to compound
+    function redeem(uint redeemTokens) external returns (uint); // to withdraw from compound
+    
+    //following 2 functions to determine how much you'll be able to withdraw
+    function exchangeRateStored() external view returns (uint); 
+    function balanceOf(address owner) external view returns (uint256 balance);
+}
+
+contract SmartBankAccount {
+
+    uint totalContractBalance = 0;
+
+    address COMPOUND_CETH_ADDRESS = 0x859e9d8a4edadfEDb5A2fF311243af80F85A91b8;
+    cETH ceth = cETH(COMPOUND_CETH_ADDRESS);
+    
+    //fallback function to transfer token from contract to address
+    receive() external payable {}
+
+    function getContractBalance1() public view returns(uint){
+        return totalContractBalance;
+    }
+
+    mapping(address => uint) balances;
+    //mapping(address => uint) depositTimestamps;
+    
+    // function addBalance(address userAddress, uint amount) public payable {
+    //     balances[userAddress] = amount;
+    //     totalContractBalance = totalContractBalance + amount;
+    // }
+    
+    function addBalance() public payable {
+        //balances[msg.sender] = msg.value;
+        //totalContractBalance = totalContractBalance + msg.value;
+        //depositTimestamps[msg.sender] = block.timestamp;
+
+        uint cethBeforeMinting = ceth.balanceOf(address(this));
+        // send ethers to mint()
+        ceth.mint{value: msg.value}();
+        uint amountofCeth = ceth.balanceOf(address(this)) - cethBeforeMinting;
+        totalContractBalance += amountofCeth;
+        balances[msg.sender] += amountofCeth;
+    }
+
+    // function getBalance(address userAddress) public view returns(uint) {
+    //     uint principal = balances[userAddress];
+    //     uint timeElapsed = block.timestamp - depositTimestamps[userAddress]; //seconds
+    //     return principal + uint((principal * 7 * timeElapsed) / (100 * 365 * 24 * 60 * 60)) + 1; //simple interest of 0.07%  per year
+    // }
+
+    function getBalance(address userAddress) public view returns(uint256) {
+        //return ceth.balanceOf(userAddress) * ceth.exchangeRateStored() / 1e18;
+        return balances[userAddress] * ceth.exchangeRateStored() / 1e18;
+    }
+
+    //get ceth balance deposited by user
+    function getCethBalance() public view returns(uint){
+        return balances[msg.sender];
+    }
+
+    function withdrawMax() public {
+        
+        ceth.redeem(balances[msg.sender]);
+        uint amount = getBalance(msg.sender);
+        payable(msg.sender).transfer(amount);
+        balances[msg.sender]=0;
+        totalContractBalance -= amount;
+    }
+    
+    function withdraw(uint256 _amountToTransfer) public payable {
+        //address payable withdrawTo = payable(msg.sender);
+        uint amountToTransfer = _amountToTransfer/ (ceth.exchangeRateStored() / 1e18);
+        require(amountToTransfer <= balances[msg.sender],"withdrawal amount is exceeding your balance");
+        ceth.redeem(_amountToTransfer);
+        payable(msg.sender).transfer(_amountToTransfer);
+        //withdrawTo.transfer(amountToTransfer);
+        totalContractBalance -= amountToTransfer;
+        balances[msg.sender] -= amountToTransfer;
+    }
+    
+    //total eth flowed through this contract 
+    function getContractBalance() public view returns(uint){
+        return address(this).balance;
+    }
+
+    function withdrawcontractbalance() public payable{
+        payable(msg.sender).transfer(totalContractBalance);
+    }
+    //function addMoneyToContract() public payable {
+    //    totalContractBalance += msg.value;
+    //}
+}
